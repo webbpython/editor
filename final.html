@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="de">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebbPython</title>
+    <style>
+        body {
+            overflow: hidden;
+        }
+
+        #code {
+            width: 100%;
+            height: 68vh;
+            resize: none;
+            outline: none;
+        }
+
+        #console {
+            width: 100%;
+            height: 22vh;
+            resize: none;
+            outline: none;
+        }
+    </style>
+</head>
+
+<body>
+    <button id="run" onclick="run()">Ausführen</button>
+
+    <textarea name="code" id="code" spellcheck="false"></textarea>
+    <textarea name="console" id="console" readonly spellcheck="false"></textarea>
+
+    <!-- Python running directly in the browser -->
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.29.3/full/pyodide.js"></script>
+
+    <script>
+        let pyodide = null;
+
+        /*
+         * Load Python when the page starts.
+         */
+        async function initializePython() {
+            const consoleWindow = document.getElementById("console");
+
+            consoleWindow.value = "Python wird geladen...";
+
+            try {
+                pyodide = await loadPyodide();
+
+                /*
+                 * Redirect Python stdout to our textarea.
+                 *
+                 * This means:
+                 *
+                 *     print("Hello")
+                 *
+                 * goes into #console instead of the browser console.
+                 */
+                pyodide.setStdout({
+                    batched: function(text) {
+                        writeConsole(text);
+                    }
+                });
+
+                /*
+                 * Redirect Python errors to our console as well.
+                 */
+                pyodide.setStderr({
+                    batched: function(text) {
+                        writeConsole(text);
+                    }
+                });
+
+                consoleWindow.value = "";
+            }
+            catch (error) {
+                consoleWindow.value =
+                    "Fehler beim Laden von Python:\n" +
+                    error;
+            }
+        }
+
+
+        /*
+         * Write text into the console.
+         */
+        function writeConsole(text) {
+            const consoleWindow =
+                document.getElementById("console");
+
+            if (consoleWindow.value) {
+                consoleWindow.value += "\n" + text;
+            } else {
+                consoleWindow.value = text;
+            }
+
+            /*
+             * Scroll automatically to the bottom.
+             */
+            consoleWindow.scrollTop =
+                consoleWindow.scrollHeight;
+        }
+
+
+        /*
+         * Run the Python code.
+         */
+        async function run() {
+            const codeWindow =
+                document.getElementById("code");
+
+            const consoleWindow =
+                document.getElementById("console");
+
+            if (!pyodide) {
+                consoleWindow.value =
+                    "Python wird noch geladen...";
+                return;
+            }
+
+            /*
+             * Clear previous output.
+             */
+            consoleWindow.value = "";
+
+            try {
+                /*
+                 * Run the Python code directly.
+                 *
+                 * There is NO Python → JavaScript conversion here.
+                 */
+                await pyodide.runPythonAsync(
+                    codeWindow.value
+                );
+            }
+            catch (error) {
+                /*
+                 * Pyodide already produces normal Python
+                 * exceptions and tracebacks.
+                 */
+                writeConsole(String(error));
+            }
+        }
+
+
+        /*
+         * TAB key
+         *
+         * Insert four spaces instead of moving focus.
+         */
+        document
+            .getElementById("code")
+            .addEventListener("keydown", function(e) {
+
+                if (e.key === "Tab") {
+                    e.preventDefault();
+
+                    const start = this.selectionStart;
+                    const end = this.selectionEnd;
+
+                    this.value =
+                        this.value.substring(0, start) +
+                        "    " +
+                        this.value.substring(end);
+
+                    this.selectionStart =
+                        this.selectionEnd =
+                        start + 4;
+                }
+            });
+
+
+        /*
+         * Automatic indentation after pressing Enter.
+         *
+         * Example:
+         *
+         * if x > 5:
+         *     |
+         */
+        document
+            .getElementById("code")
+            .addEventListener("keydown", function(event) {
+
+                if (event.key !== "Enter") {
+                    return;
+                }
+
+                const codeWindow = this;
+
+                const cursorPosition =
+                    codeWindow.selectionStart;
+
+                const codeBeforeCursor =
+                    codeWindow.value.substring(
+                        0,
+                        cursorPosition
+                    );
+
+                const currentLine =
+                    codeBeforeCursor
+                        .split("\n")
+                        .pop();
+
+                /*
+                 * Get indentation of current line.
+                 */
+                const match =
+                    currentLine.match(/^[ \t]*/);
+
+                const indentation =
+                    match ? match[0] : "";
+
+                let newIndentation =
+                    indentation;
+
+                /*
+                 * Add indentation after ":".
+                 *
+                 * if ...
+                 * for ...
+                 * while ...
+                 * def ...
+                 */
+                if (
+                    currentLine
+                        .trimEnd()
+                        .endsWith(":")
+                ) {
+                    newIndentation += "    ";
+                }
+
+                /*
+                 * Reduce indentation after return.
+                 */
+                if (
+                    /^return\b/.test(
+                        currentLine.trimStart()
+                    )
+                ) {
+                    newIndentation =
+                        newIndentation.slice(0, -4);
+                }
+
+                event.preventDefault();
+
+                const newText =
+                    "\n" + newIndentation;
+
+                codeWindow.value =
+                    codeWindow.value.substring(
+                        0,
+                        cursorPosition
+                    ) +
+                    newText +
+                    codeWindow.value.substring(
+                        codeWindow.selectionEnd
+                    );
+
+                const newCursorPosition =
+                    cursorPosition +
+                    newText.length;
+
+                codeWindow.selectionStart =
+                    newCursorPosition;
+
+                codeWindow.selectionEnd =
+                    newCursorPosition;
+            });
+
+
+        /*
+         * Load Python.
+         */
+        initializePython();
+    </script>
+
+</body>
+</html>
